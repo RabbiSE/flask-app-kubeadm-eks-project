@@ -1,130 +1,107 @@
- 
-# Flask App with MySQL Docker Setup
+# Two-Tier Flask App Deployment Guide
 
-This is a simple Flask app that interacts with a MySQL database. The app allows users to submit messages, which are then stored in the database and displayed on the frontend.
+---
 
-## Prerequisites
+## Docker Compose
 
-Before you begin, make sure you have the following installed:
-
-- Docker
-- Git (optional, for cloning the repository)
-
-## Setup
-
-1. Clone this repository (if you haven't already):
-
-   ```bash
-   git clone https://github.com/your-username/your-repo-name.git
-   ```
-
-2. Navigate to the project directory:
-
-   ```bash
-   cd your-repo-name
-   ```
-
-3. Create a `.env` file in the project directory to store your MySQL environment variables:
-
-   ```bash
-   touch .env
-   ```
-
-4. Open the `.env` file and add your MySQL configuration:
-
-   ```
-   MYSQL_HOST=mysql
-   MYSQL_USER=your_username
-   MYSQL_PASSWORD=your_password
-   MYSQL_DB=your_database
-   ```
-
-## Usage
-
-1. Start the containers using Docker Compose:
-
-   ```bash
-   docker-compose up --build
-   ```
-
-2. Access the Flask app in your web browser:
-
-   - Frontend: http://localhost
-   - Backend: http://localhost:5000
-
-3. Create the `messages` table in your MySQL database:
-
-   - Use a MySQL client or tool (e.g., phpMyAdmin) to execute the following SQL commands:
-   
-     ```sql
-     CREATE TABLE messages (
-         id INT AUTO_INCREMENT PRIMARY KEY,
-         message TEXT
-     );
-     ```
-
-4. Interact with the app:
-
-   - Visit http://localhost to see the frontend. You can submit new messages using the form.
-   - Visit http://localhost:5000/insert_sql to insert a message directly into the `messages` table via an SQL query.
-
-## Cleaning Up
-
-To stop and remove the Docker containers, press `Ctrl+C` in the terminal where the containers are running, or use the following command:
+### Prerequisites
+- Open port `5000` in EC2 security group
+- Create `mysql-data` directory for volume
 
 ```bash
-docker-compose down
+mkdir mysql-data
 ```
 
-## To run this two-tier application using  without docker-compose
+### Build & Run
 
-- First create a docker image from Dockerfile
 ```bash
-docker build -t flaskapp .
+sudo docker build . -t flask-app
 ```
 
-- Now, make sure that you have created a network using following command
+### Docker Hub
+
 ```bash
-docker network create twotier
+docker login -u rabbise
 ```
+> Authenticate with generated token
 
-- Attach both the containers in the same network, so that they can communicate with each other
-
-i) MySQL container 
 ```bash
-docker run -d \
-    --name mysql \
-    -v mysql-data:/var/lib/mysql \
-    --network=twotier \
-    -e MYSQL_DATABASE=mydb \
-    -e MYSQL_ROOT_PASSWORD=admin \
-    -p 3306:3306 \
-    mysql:5.7
-
+sudo docker build -t rabbise/two-tier-flask-app:latest .
+docker push rabbise/two-tier-flask-app:latest
 ```
-ii) Backend container
+
+### Start Services
+
 ```bash
-docker run -d \
-    --name flaskapp \
-    --network=twotier \
-    -e MYSQL_HOST=mysql \
-    -e MYSQL_USER=root \
-    -e MYSQL_PASSWORD=admin \
-    -e MYSQL_DB=mydb \
-    -p 5000:5000 \
-    flaskapp:latest
-
+sudo docker-compose up -d
 ```
 
-## Notes
+---
 
-- Make sure to replace placeholders (e.g., `your_username`, `your_password`, `your_database`) with your actual MySQL configuration.
+## Kubeadm
 
-- This is a basic setup for demonstration purposes. In a production environment, you should follow best practices for security and performance.
+### Prerequisites
+- Open ports `6443`, `30004`, and `10250`
+- Create `mysqldata` directory for volume
 
-- Be cautious when executing SQL queries directly. Validate and sanitize user inputs to prevent vulnerabilities like SQL injection.
-
-- If you encounter issues, check Docker logs and error messages for troubleshooting.
-
+```bash
+mkdir mysqldata
 ```
 
+### Deploy
+
+```bash
+kubectl apply -f mysql-pv.yml
+kubectl apply -f mysql-pvc.yml
+kubectl apply -f mysql-deployment.yml
+kubectl apply -f mysql-svc.yml
+kubectl get svc  # Check MySQL cluster IP
+kubectl apply -f two-tier-app-deployment.yml
+kubectl apply -f two-tier-app-svc.yml
+```
+
+> **Access:** `<Worker IP>:<NodePort>`
+
+---
+
+## Helm
+
+### Setup
+
+```bash
+mkdir Helm
+```
+
+### MySQL Chart
+
+```bash
+helm create mysql-chart
+helm package mysql-chart/
+helm install mysql-chart ./mysql-chart
+kubectl get svc  # Check MySQL cluster IP
+```
+
+### Flask App Chart
+
+```bash
+helm create flask-app-chart
+helm package flask-app-chart/
+helm install flask-app-chart ./flask-app-chart
+```
+
+---
+
+## EKS
+
+### Deploy MySQL
+
+```bash
+kubectl apply -f mysql-deployment.yml -f mysql-svc.yml -f mysql-secrets.yml -f mysql-configmap.yml
+kubectl get svc  # Check MySQL cluster IP
+```
+
+### Deploy Flask App
+
+```bash
+kubectl apply -f two-tier-app-deployment.yml -f two-tier-app-svc.yml
+```
